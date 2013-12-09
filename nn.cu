@@ -3,9 +3,9 @@
 #include <time.h>
 #include <math.h>
 #include <time.h>
-#include <windows.h>
+/*#include <windows.h>*/
 
-#define WARP_SIZE 32
+#define WARP_SIZE 8
 #define DEBUG false
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -288,7 +288,7 @@ void update_layer(float *src_layer, float *dst_layer, int src_n, int dst_n, floa
         printf("\nResult is\n");
         drawMatrix(dst_layer, dst_n, 1);
         printf("\n***** ENDED UPDATING LAYER *****\n");
-        Sleep(1000);
+        /*Sleep(1000);*/
     }
 
 }
@@ -412,14 +412,14 @@ float xback_propagate_network(Pattern p, NeuralNet n) {
     if (DEBUG) {
         printf("\nHidden-Output weights\n");
         drawMatrix(n.w_hidden_output, n.n_outputs, n.n_hidden);
-        Sleep(500);
+        /*Sleep(500);*/
     }
    
     setWeightsForLayers(n.w_input_hidden, n.changes_input_hidden, hidden_delta, n.out_input, n.n_inputs, n.n_hidden);
     if (DEBUG) {
         printf("\nInput-Hidden weights\n");
         drawMatrix(n.w_input_hidden, n.n_hidden, n.n_inputs);
-        Sleep(500);
+        /*Sleep(500);*/
     }
    
     // Calculate error
@@ -429,7 +429,7 @@ float xback_propagate_network(Pattern p, NeuralNet n) {
     }
     if (DEBUG) {
         printf("\n ***** Error for this pattern is: %f *****\n", error); 
-        Sleep(2000);
+        /*Sleep(2000);*/
     }
     return error;
 }
@@ -445,7 +445,7 @@ void train_network(Pattern *patterns, int n_patterns, int n_iterations, NeuralNe
     }
     if (i % 10 == 0) {
        printf("Error is: %-.5f\n", error);
-       if (DEBUG) Sleep(2000);
+       /*if (DEBUG) Sleep(2000);*/
     }
   }
 }
@@ -464,7 +464,7 @@ int main() {
     srand((unsigned)time(NULL));
     
     int n_inputs = 2;
-    int n_hidden = 9;
+    int n_hidden = 4;
     int n_outputs = 1;
     
     // Build output layer
