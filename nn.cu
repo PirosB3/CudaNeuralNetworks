@@ -3,12 +3,17 @@
 #include <time.h>
 #include <math.h>
 #include <time.h>
-/*#include <windows.h>*/
+
+#ifdef __APPLE__
+    #include <unistd.h>
+#else _WIN32
+    #include <windows.h>
+#endif
 
 #define WARP_SIZE 8
 #define DEBUG false
-
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
 inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -16,6 +21,15 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
       fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
       if (abort) exit(code);
    }
+}
+
+
+void _sleep(int n) {
+    #ifdef __APPLE__
+        /*sleep(n);*/
+    #else _WIN32
+        Sleep(n * 1000);
+    #endif
 }
 
 float *_copyHostDevice(float *src, int src_size) {
@@ -288,7 +302,7 @@ void update_layer(float *src_layer, float *dst_layer, int src_n, int dst_n, floa
         printf("\nResult is\n");
         drawMatrix(dst_layer, dst_n, 1);
         printf("\n***** ENDED UPDATING LAYER *****\n");
-        /*Sleep(1000);*/
+        _sleep(1);
     }
 
 }
@@ -305,7 +319,7 @@ void update_pattern(Pattern pattern, NeuralNet nn) {
     update_layer(nn.out_hidden, nn.out_output, nn.n_hidden, nn.n_outputs, nn.w_hidden_output);
 }
 
-float back_propagate_network(Pattern p, NeuralNet n) {
+float xback_propagate_network(Pattern p, NeuralNet n) {
     /*
      * This is the backpropagation process, where error is calculated and
      * propagated back through the network in order to adjust the weights
@@ -372,7 +386,7 @@ float back_propagate_network(Pattern p, NeuralNet n) {
 
 
 
-float xback_propagate_network(Pattern p, NeuralNet n) {
+float back_propagate_network(Pattern p, NeuralNet n) {
     /*
      * This is the backpropagation process, where error is calculated and
      * propagated back through the network in order to adjust the weights
@@ -412,14 +426,14 @@ float xback_propagate_network(Pattern p, NeuralNet n) {
     if (DEBUG) {
         printf("\nHidden-Output weights\n");
         drawMatrix(n.w_hidden_output, n.n_outputs, n.n_hidden);
-        /*Sleep(500);*/
+        _sleep(1);
     }
    
     setWeightsForLayers(n.w_input_hidden, n.changes_input_hidden, hidden_delta, n.out_input, n.n_inputs, n.n_hidden);
     if (DEBUG) {
         printf("\nInput-Hidden weights\n");
         drawMatrix(n.w_input_hidden, n.n_hidden, n.n_inputs);
-        /*Sleep(500);*/
+        _sleep(1);
     }
    
     // Calculate error
@@ -429,7 +443,7 @@ float xback_propagate_network(Pattern p, NeuralNet n) {
     }
     if (DEBUG) {
         printf("\n ***** Error for this pattern is: %f *****\n", error); 
-        /*Sleep(2000);*/
+        _sleep(2);
     }
     return error;
 }
@@ -445,7 +459,7 @@ void train_network(Pattern *patterns, int n_patterns, int n_iterations, NeuralNe
     }
     if (i % 10 == 0) {
        printf("Error is: %-.5f\n", error);
-       /*if (DEBUG) Sleep(2000);*/
+       if (DEBUG) _sleep(2);
     }
   }
 }
@@ -483,7 +497,7 @@ int main() {
     Pattern patterns[] = {p3, p2, p1, p4};
     
     // Train the network
-    train_network(patterns, 4, 10000, nn);
+    train_network(patterns, 4, 1000, nn);
 
     printf("\n\nTesting the network\n");
     update_pattern(p2, nn);
