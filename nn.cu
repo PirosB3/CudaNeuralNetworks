@@ -10,8 +10,8 @@
     #include <windows.h>
 #endif
 
-#define WARP_SIZE 8
-#define DEBUG false
+#define WARP_SIZE 16
+#define DEBUG true
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
 inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
@@ -26,7 +26,7 @@ inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
 
 void _sleep(int n) {
     #ifdef __APPLE__
-        /*sleep(n);*/
+        sleep(n);
     #else _WIN32
         Sleep(n * 1000);
     #endif
@@ -319,7 +319,7 @@ void update_pattern(Pattern pattern, NeuralNet nn) {
     update_layer(nn.out_hidden, nn.out_output, nn.n_hidden, nn.n_outputs, nn.w_hidden_output);
 }
 
-float xback_propagate_network(Pattern p, NeuralNet n) {
+float back_propagate_network(Pattern p, NeuralNet n) {
     /*
      * This is the backpropagation process, where error is calculated and
      * propagated back through the network in order to adjust the weights
@@ -386,7 +386,7 @@ float xback_propagate_network(Pattern p, NeuralNet n) {
 
 
 
-float back_propagate_network(Pattern p, NeuralNet n) {
+float xback_propagate_network(Pattern p, NeuralNet n) {
     /*
      * This is the backpropagation process, where error is calculated and
      * propagated back through the network in order to adjust the weights
