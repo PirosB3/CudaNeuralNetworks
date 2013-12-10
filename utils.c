@@ -1,5 +1,7 @@
 #define WARP_SIZE 16
-#define DEBUG true
+#define DEBUG false
+
+/* ---------------- [[HELPER FUNCTIONS FOR GLOBAL MEMORY]] ---------------- */
 
 float *_copyHostDevice(float *src, int src_size) {
     float *src_d;
@@ -20,11 +22,15 @@ float *_copyDeviceHost(float *src, int src_size, float *dst=NULL) {
     return target;
 }
 
+/* ---------------- [[HELPER FUNCTIONS FOR TILING]] ---------------- */
+
 dim3 getGridBasedOnBlockSize(int width, int height, int block_size) {
     int gridX = (int)ceil((float)width / block_size);
     int gridY = (int)ceil((float)height / block_size);
     return dim3(gridX, gridY);
 }
+
+/* ---------------- [[HELPER FUNCTIONS FOR DEBUGGING]] ---------------- */
 
 void _sleep(int n) {
     #ifdef __APPLE__

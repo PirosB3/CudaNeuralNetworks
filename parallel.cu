@@ -1,8 +1,18 @@
 #include <math.h>
 
 #define WARP_SIZE 16
-#define DEBUG true
+#define DEBUG false
 
+inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
+
+/* ---------------- [[CUDA KERNELS]] ---------------- */
 
 __global__ void updateWeightsCUDA(float *weights, float *changes, float *delta_outputs, float *inputs, int n_inputs, int n_outputs) {
     int width = n_outputs;
@@ -71,6 +81,8 @@ __global__ void reduceStepCUDA(float *input, float *output, int width, int heigh
         }
     }
 }
+
+/* ---------------- [[LAUNCH FUNCTIONS]] ---------------- */
 
 void setWeightsForLayers(float *weights, float *changes, float *delta_outputs, float *inputs, int n_inputs, int n_outputs) {
 

@@ -14,17 +14,8 @@
 #endif
 
 #define WARP_SIZE 16
-#define DEBUG true
+#define DEBUG false
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-
-inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
-      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-   }
-}
 
 typedef struct {
     int n_inputs;
@@ -111,6 +102,11 @@ float dsigmoid(float y) {
 }
 
 void update_pattern(Pattern pattern, NeuralNet nn) {
+
+    if (DEBUG) {
+        printf("\n ***** LAYER UPDATE *****\n");
+    }
+
     // Write inputs
     int i;
     for(i=0; i < nn.n_inputs -1; i++) {
@@ -120,17 +116,13 @@ void update_pattern(Pattern pattern, NeuralNet nn) {
     // Run parallel update
     update_layer(nn.out_input, nn.out_hidden, nn.n_inputs, nn.n_hidden, nn.w_input_hidden);
     update_layer(nn.out_hidden, nn.out_output, nn.n_hidden, nn.n_outputs, nn.w_hidden_output);
+
+    if (DEBUG) {
+        printf("\n ***** END LAYER UPDATE *****\n");
+    }
 }
 
 float back_propagate_network(Pattern p, NeuralNet n) {
-    /*
-     * This is the backpropagation process, where error is calculated and
-     * propagated back through the network in order to adjust the weights
-     * between neurons.
-     * NOTE: This section will also be parallelised. Unfortunately, the hidden delta
-     * needs to be calculated after the output delta. So we can only parallelize
-     * part of the process (this is what I think currently, I might be wrong!).
-    */
 
     if (DEBUG) {
         printf("\n ***** BACK PROPAGATE *****\n");
