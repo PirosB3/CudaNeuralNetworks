@@ -138,7 +138,7 @@ void update_layer(float *src_layer, float *dst_layer, int src_n, int dst_n, floa
         cudaMalloc((void**)&buffer_d, sizeof(float) * (dst_n * gridY));
  
         // RUN RUN RUN!
-        reduceStepCUDA<<<grid, block>>>(currentTarget, buffer_d, dst_n, src_n);
+        reduceStepCUDA<<<grid, block>>>(currentTarget, buffer_d, dst_n, currentHeight);
 
         // Free old memory and keep track of the new one
         cudaFree(currentTarget);
