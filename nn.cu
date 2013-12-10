@@ -14,8 +14,7 @@
 #endif
 
 #define WARP_SIZE 16
-#define DEBUG false
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+#define DEBUG true
 
 typedef struct {
     int n_inputs;
