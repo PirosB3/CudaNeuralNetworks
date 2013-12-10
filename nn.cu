@@ -13,9 +13,6 @@
     #include <windows.h>
 #endif
 
-#define WARP_SIZE 16
-#define DEBUG true
-
 typedef struct {
     int n_inputs;
     int n_hidden;

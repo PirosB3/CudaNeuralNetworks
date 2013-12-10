@@ -8,12 +8,11 @@
 __global__ void updateWeightsCUDA(float *weights, float *changes, float *delta_outputs, float *inputs, int n_inputs, int n_outputs) {
     int width = n_outputs;
     int height = n_inputs;
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
+    GlobalDim gd = getGlobalDim(blockDim, blockIdx, threadIdx);
 
-    if ((threadX < width) && (threadY < height)) {
-        int idx = width * threadY + threadX;
-        float change = delta_outputs[threadX] * inputs[threadY];
+    if ((gd.x < width) && (gd.y < height)) {
+        int idx = width * gd.y + gd.x;
+        float change = delta_outputs[gd.x] * inputs[gd.y];
         
         weights[idx] += 0.5 * change + 0.5 * changes[idx];
         changes[idx] = change;
@@ -22,12 +21,11 @@ __global__ void updateWeightsCUDA(float *weights, float *changes, float *delta_o
 }
 
 __global__ void mapStepCUDA(float *inputs, float *matrix, float *buffer, int width, int height) {
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
+    GlobalDim gd = getGlobalDim(blockDim, blockIdx, threadIdx);
 
-    if ((threadX < width) && (threadY < height)) {
-        int idx = width * threadY + threadX;
-        buffer[idx] = inputs[threadY] * matrix[idx];
+    if ((gd.x < width) && (gd.y < height)) {
+        int idx = width * gd.y + gd.x;
+        buffer[idx] = inputs[gd.y] * matrix[idx];
     }
 }
 
@@ -36,13 +34,13 @@ __global__ void reduceStepCUDA(float *input, float *output, int width, int heigh
     __shared__ float sharedMemory[WARP_SIZE * WARP_SIZE];
 
     // STEP 1: exclude all threads that do not depend from problem
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
+    GlobalDim gd = getGlobalDim(blockDim, blockIdx, threadIdx);
 
-    if ((threadX < width) && (threadY < height)) {
+
+    if ((gd.x < width) && (gd.y < height)) {
 
         // STEP 2: Move to shared memory
-        int gridId = threadY * width + threadX;
+        int gridId = gd.y * width + gd.x;
         int blockId = threadIdx.y * blockDim.x + threadIdx.x;
         sharedMemory[blockId] = input[gridId];
         __syncthreads();
@@ -51,7 +49,7 @@ __global__ void reduceStepCUDA(float *input, float *output, int width, int heigh
         while(n >= 1) {
             if (threadIdx.y < n) {
 
-                if ((threadY + n) < height) {
+                if ((gd.y + n) < height) {
                     int firstIndex = blockId;
                     int secondIndex = blockDim.x * (threadIdx.y + n) + threadIdx.x;
                     sharedMemory[firstIndex] += sharedMemory[secondIndex];
@@ -68,7 +66,7 @@ __global__ void reduceStepCUDA(float *input, float *output, int width, int heigh
 
         // STEP 3: Write back results
         if (threadIdx.y == 1) {
-            output[blockIdx.y * width + threadX] = sharedMemory[threadIdx.x];
+            output[blockIdx.y * width + gd.x] = sharedMemory[threadIdx.x];
         }
     }
 }

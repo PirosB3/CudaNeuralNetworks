@@ -24,6 +24,18 @@ float *_copyDeviceHost(float *src, int src_size, float *dst=NULL) {
 
 /* ---------------- [[HELPER FUNCTIONS FOR TILING]] ---------------- */
 
+typedef struct {
+    int x;
+    int y;
+} GlobalDim;
+
+__device__ GlobalDim getGlobalDim(dim3 blockDim, dim3 blockIdx, dim3 threadIdx) {
+    GlobalDim gd;
+    gd.x = blockDim.x * blockIdx.x + threadIdx.x;
+    gd.y = blockDim.y * blockIdx.y + threadIdx.y;
+    return gd;
+}
+
 dim3 getGridBasedOnBlockSize(int width, int height, int block_size) {
     int gridX = (int)ceil((float)width / block_size);
     int gridY = (int)ceil((float)height / block_size);
