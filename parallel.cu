@@ -78,7 +78,7 @@ void setWeightsForLayers(float *weights, float *changes, float *delta_outputs, f
     int grid_size = n_inputs * n_outputs;
     float *weights_d = _copyHostDevice(weights, grid_size);
     float *changes_d = _copyHostDevice(changes, grid_size);
-    float *delta_outputs_d = _copyHostDevice(weights, grid_size);
+    float *delta_outputs_d = _copyHostDevice(delta_outputs, n_outputs);
     float *inputs_d = _copyHostDevice(inputs, n_inputs);
 
     // Define block structure
