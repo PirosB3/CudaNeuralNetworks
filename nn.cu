@@ -4,121 +4,14 @@
 #include <math.h>
 #include <time.h>
 
+#include "utils.c"
+#include "parallel.cu"
+
 #ifdef __APPLE__
     #include <unistd.h>
 #else _WIN32
     #include <windows.h>
 #endif
-
-#define WARP_SIZE 16
-#define DEBUG true
-#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-
-inline void gpuAssert(cudaError_t code, char *file, int line, bool abort=true)
-{
-   if (code != cudaSuccess) 
-   {
-      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-   }
-}
-
-
-void _sleep(int n) {
-    #ifdef __APPLE__
-        sleep(n);
-    #else _WIN32
-        Sleep(n * 1000);
-    #endif
-}
-
-float *_copyHostDevice(float *src, int src_size) {
-    float *src_d;
-    cudaMalloc((void**)&src_d, sizeof(float) * src_size);
-    cudaMemcpy(src_d, src, sizeof(float) * src_size, cudaMemcpyHostToDevice);
-    return src_d;
-}
-
-float *_copyDeviceHost(float *src, int src_size, float *dst=NULL) {
-    float *target;
-    if (dst == NULL) {
-        target = (float*)malloc(sizeof(float) * src_size);
-    } else {
-        target = dst;
-    }
-    
-    cudaMemcpy(target, src, sizeof(float) * src_size, cudaMemcpyDeviceToHost);
-    return target;
-}
-
-__global__ void updateWeightsCUDA(float *weights, float *changes, float *delta_outputs, float *inputs, int n_inputs, int n_outputs) {
-    int width = n_outputs;
-    int height = n_inputs;
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
-
-    if ((threadX < width) && (threadY < height)) {
-        int idx = width * threadY + threadX;
-        float change = delta_outputs[threadX] * inputs[threadY];
-        
-        weights[idx] += 0.5 * change + 0.5 * changes[idx];
-        changes[idx] = change;
-    }
-
-}
-
-__global__ void mapStepCUDA(float *inputs, float *matrix, float *buffer, int width, int height) {
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
-
-    if ((threadX < width) && (threadY < height)) {
-        int idx = width * threadY + threadX;
-        buffer[idx] = inputs[threadY] * matrix[idx];
-    }
-}
-
-__global__ void reduceStepCUDA(float *input, float *output, int width, int height) {
-
-    __shared__ float sharedMemory[WARP_SIZE * WARP_SIZE];
-
-    // STEP 1: exclude all threads that do not depend from problem
-    int threadX = blockDim.x * blockIdx.x + threadIdx.x;
-    int threadY = blockDim.y * blockIdx.y + threadIdx.y;
-
-    if ((threadX < width) && (threadY < height)) {
-
-        // STEP 2: Move to shared memory
-        int gridId = threadY * width + threadX;
-        int blockId = threadIdx.y * blockDim.x + threadIdx.x;
-        sharedMemory[blockId] = input[gridId];
-        __syncthreads();
-
-        int n = (int)ceil((float)blockDim.y/2);
-        while(n >= 1) {
-            if (threadIdx.y < n) {
-
-                if ((threadY + n) < height) {
-                    int firstIndex = blockId;
-                    int secondIndex = blockDim.x * (threadIdx.y + n) + threadIdx.x;
-                    sharedMemory[firstIndex] += sharedMemory[secondIndex];
-                }
-            }
-            __syncthreads();
-            if (n == 1) {
-                break;
-            } else {
-                n = (int)ceil((float)n/2);
-            }
-        }
-        __syncthreads();
-
-        // STEP 3: Write back results
-        if (threadIdx.y == 1) {
-            output[blockIdx.y * width + threadX] = sharedMemory[threadIdx.x];
-        }
-    }
-}
-
 
 typedef struct {
     int n_inputs;
@@ -141,16 +34,6 @@ typedef struct {
     int *data;
 } Pattern;
 
-void drawMatrix(float *m, int width, int height) {
-    for (int i=0; i < height; i++) {
-        for (int j=0; j < width; j++) {
-            printf("%f ", m[i * width + j]);
-        }
-        printf("\n");
-    }
-}
-
-
 void buildLayer(float *arr, int n, float initial) {
     int i=0;
     while(i < n){
@@ -171,33 +54,6 @@ float* buildWeightsLayer(int outer_n, int inner_n, float seed) {
         }
     }
     return w;
-}
-
-dim3 getGridBasedOnBlockSize(int width, int height, int block_size) {
-    int gridX = (int)ceil((float)width / block_size);
-    int gridY = (int)ceil((float)height / block_size);
-    return dim3(gridX, gridY);
-}
-
-void setWeightsForLayers(float *weights, float *changes, float *delta_outputs, float *inputs, int n_inputs, int n_outputs) {
-
-    // Copy to device memory
-    int grid_size = n_inputs * n_outputs;
-    float *weights_d = _copyHostDevice(weights, grid_size);
-    float *changes_d = _copyHostDevice(changes, grid_size);
-    float *delta_outputs_d = _copyHostDevice(weights, grid_size);
-    float *inputs_d = _copyHostDevice(inputs, n_inputs);
-
-    // Define block structure
-    dim3 block(WARP_SIZE, WARP_SIZE);
-    dim3 grid = getGridBasedOnBlockSize(n_outputs, n_inputs, WARP_SIZE);
-
-    // RUN RUN RUN!
-    updateWeightsCUDA<<<grid, block>>>(weights_d, changes_d, delta_outputs_d, inputs_d, n_inputs, n_outputs);
-
-    // Copy back weights and momenutm
-    weights = _copyDeviceHost(weights_d, grid_size, weights);
-    changes = _copyDeviceHost(changes_d, grid_size, changes);
 }
 
 NeuralNet buildNeuralNet(int n_inputs, int n_outputs, int n_hidden) {
@@ -241,73 +97,12 @@ float dsigmoid(float y) {
     return 1.0 - pow(y,2.0f);
 }
 
-void update_layer(float *src_layer, float *dst_layer, int src_n, int dst_n, float *weights) {
-    dim3 block(WARP_SIZE, WARP_SIZE);
-
-    float *src_layer_d, *weights_d, *buffer_d;
-    int total = src_n * dst_n;
- 
-    // Allocate input in global memory
-    src_layer_d = _copyHostDevice(src_layer, src_n);
-    weights_d = _copyHostDevice(weights, total);
-    cudaMalloc((void**)&buffer_d, sizeof(float) * total);
- 
-    // Create block dimensions and run parallel update layer
-    int gridX = (int)ceil((float)dst_n/WARP_SIZE);
-    int gridY = (int)ceil((float)src_n/WARP_SIZE);
-    dim3 grid(gridX, gridY);
-
-    // RUN RUN RUN!
-    if (DEBUG) {
-        printf("\n***** Updating layer *****\n");
-
-        printf("\nFrom\n");
-        drawMatrix(src_layer, src_n, 1);
-
-        printf("\nTo\n");
-        drawMatrix(weights, dst_n, src_n);
-    }
-    mapStepCUDA<<<grid, block>>>(src_layer_d, weights_d, buffer_d, dst_n, src_n);
-
-    // Set the current target to the input
-    float *currentTarget = buffer_d;
-    int currentHeight = src_n;
-
-    while (currentHeight > 1) {
-
-        // Calculate grid size
-        int gridX = (int)ceil((float)dst_n/WARP_SIZE);
-        int gridY = (int)ceil((float)currentHeight/WARP_SIZE);
-        dim3 grid(gridX, gridY);
-
-        // Allocate new buffer
-        float *buffer_d;
-        cudaMalloc((void**)&buffer_d, sizeof(float) * (dst_n * gridY));
- 
-        // RUN RUN RUN!
-        reduceStepCUDA<<<grid, block>>>(currentTarget, buffer_d, dst_n, src_n);
-
-        // Free old memory and keep track of the new one
-        cudaFree(currentTarget);
-        currentHeight = grid.y;
-        currentTarget = buffer_d;
-    }
-
-    dst_layer =_copyDeviceHost(currentTarget, dst_n, dst_layer);
-    for (int i=0; i < dst_n; i++) {
-        dst_layer[i] = tanh(dst_layer[i]);
-    }
-
-    if (DEBUG) {
-        printf("\nResult is\n");
-        drawMatrix(dst_layer, dst_n, 1);
-        printf("\n***** ENDED UPDATING LAYER *****\n");
-        _sleep(1);
-    }
-
-}
-
 void update_pattern(Pattern pattern, NeuralNet nn) {
+
+    if (DEBUG) {
+        printf("\n ***** LAYER UPDATE *****\n");
+    }
+
     // Write inputs
     int i;
     for(i=0; i < nn.n_inputs -1; i++) {
@@ -317,84 +112,13 @@ void update_pattern(Pattern pattern, NeuralNet nn) {
     // Run parallel update
     update_layer(nn.out_input, nn.out_hidden, nn.n_inputs, nn.n_hidden, nn.w_input_hidden);
     update_layer(nn.out_hidden, nn.out_output, nn.n_hidden, nn.n_outputs, nn.w_hidden_output);
+
+    if (DEBUG) {
+        printf("\n ***** END LAYER UPDATE *****\n");
+    }
 }
 
 float back_propagate_network(Pattern p, NeuralNet n) {
-    /*
-     * This is the backpropagation process, where error is calculated and
-     * propagated back through the network in order to adjust the weights
-     * between neurons.
-     * NOTE: This section will also be parallelised. Unfortunately, the hidden delta
-     * needs to be calculated after the output delta. So we can only parallelize
-     * part of the process (this is what I think currently, I might be wrong!).
-    */
-
-    int i, j;
-    float *output_delta = (float*)malloc(sizeof(float) * n.n_outputs);
-    float *hidden_delta = (float*)malloc(sizeof(float) * n.n_hidden);
-
-    
-    // Calculate output delta
-    for (i=0; i < n.n_outputs; i++) {
-        float error = p.result[i] - n.out_output[i];
-        output_delta[i] = dsigmoid(n.out_output[i]) * error;
-    }
-    
-    
-    // Calculate hidden delta
-    for(i=0; i < n.n_hidden; i++) {
-        float error = 0.0f;
-        for (j=0; j < n.n_outputs; j++) {
-            error += output_delta[j] * n.w_hidden_output[i * n.n_outputs + j];
-        }
-        hidden_delta[i] = dsigmoid(n.out_hidden[i]) * error;
-    }
-    
-    /*
-     * NOTE: Once the deltas have been calculated, we can update ALL the weights
-     * in once. This section fits perfectly with the CUDA programming model of
-     * grids and blocks.
-    */
-
-    // Set hidden-output weights
-    for(i=0; i < n.n_hidden; i++) {
-      for (j=0; j < n.n_outputs; j++) {
-        float change = output_delta[j] * n.out_hidden[i];
-        n.w_hidden_output[i * n.n_outputs + j] += 0.5 * change + 0.5 * n.changes_hidden_output[i * n.n_outputs + j];
-        n.changes_hidden_output[i * n.n_outputs + j] = change;
-      }
-    }
-
-    
-    // Set input-hidden weights
-    for(i=0; i < n.n_inputs; i++) {
-      for(j=0; j < n.n_hidden; j++) {
-        float change = hidden_delta[j] * n.out_input[i];
-        n.w_input_hidden[i * n.n_hidden + j] += 0.5 * change + 0.5 * n.changes_input_hidden[i * n.n_hidden + j];
-        n.changes_input_hidden[i * n.n_hidden + j] = change;
-      }
-    }
-
-    // Calculate error
-    float error = 0.0f;
-    for (i=0; i < n.n_outputs; i++) {
-        error = error + 0.5f * pow(p.result[i] - n.out_output[i], 2);
-    }
-
-    return error;
-}
-
-
-
-float xback_propagate_network(Pattern p, NeuralNet n) {
-    /*
-     * This is the backpropagation process, where error is calculated and
-     * propagated back through the network in order to adjust the weights
-     * between neurons.
-     * NOTE: This section will also be parallelised. Unfortunately, the hidden delta
-     * needs to be calculated after the output delta. So we can only parallelize
-     * part of the process (this is what I think currently, I might be wrong!).
-    */
 
     if (DEBUG) {
         printf("\n ***** BACK PROPAGATE *****\n");
